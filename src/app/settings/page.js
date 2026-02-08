@@ -2,133 +2,198 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Loader2, MapPin, Clock, Calendar, User, Save, ArrowLeft, LogOut } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Camera, User, MapPin, Calendar } from 'lucide-react'
+
+// ★ PRESET AVATARS (Cool Avatars List)
+// mekata api DiceBear kiyana free service eka use karanawa. lassanai.
+const AVATAR_PRESETS = [
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Christopher",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Sophia",
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Bandit", 
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Gangster",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Robot1",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Robot2"
+]
 
 export default function Settings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [user, setUser] = useState(null)
   
+  // Form States
   const [fullName, setFullName] = useState('')
   const [city, setCity] = useState('')
   const [birthday, setBirthday] = useState('')
-  const [timezone, setTimezone] = useState('Asia/Colombo')
+  const [avatarUrl, setAvatarUrl] = useState('')
 
   const router = useRouter()
   const supabase = createClient()
 
-  const timezones = [
-    { label: "Sri Lanka (Colombo)", value: "Asia/Colombo" },
-    { label: "UK (London)", value: "Europe/London" },
-    { label: "Australia (Sydney)", value: "Australia/Sydney" },
-    { label: "UAE (Dubai)", value: "Asia/Dubai" },
-    { label: "Italy (Rome)", value: "Europe/Rome" },
-    { label: "Korea (Seoul)", value: "Asia/Seoul" },
-    { label: "Japan (Tokyo)", value: "Asia/Tokyo" },
-    { label: "USA (New York)", value: "America/New_York" },
-    { label: "Poland (Warsaw)", value: "Europe/Warsaw" },
-  ]
-
+  // 1. Load Current Data
   useEffect(() => {
     const getProfile = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        
-        // 1. Session එක නැත්නම් එළියට දානවා
-        if (!session) { 
-            router.replace('/login')
-            return 
-        }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      setUser(session.user)
 
-        // 2. User ව set කරනවා
-        setUser(session.user)
-
-        // 3. Profile එක ගන්නවා (මෙතන session.user.id පාවිච්චි කිරීම වැදගත්)
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id) // ★ මෙතන user.id දැම්මොත් තමයි Error එන්නේ
-            .single()
-
-        if (profile) {
-            setFullName(profile.full_name || '')
-            setCity(profile.city || '')
-            setBirthday(profile.birthday || '')
-            setTimezone(profile.timezone || 'Asia/Colombo')
-        }
-      } catch (error) {
-        console.error(error)
-      } finally {
-        setLoading(false)
+      const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
+      if (data) {
+        // Nama "Gangster " kalla ain karala pennamu edit karaddi (optional)
+        // nathnam kelinma pennamu.
+        setFullName(data.full_name || '')
+        setCity(data.city || '')
+        setBirthday(data.birthday || '')
+        setAvatarUrl(data.avatar_url || AVATAR_PRESETS[0])
       }
+      setLoading(false)
     }
     getProfile()
   }, [])
 
-  const handleUpdate = async () => {
-    // ★ Safety Check: User කෙනෙක් නැත්නම් මුකුත් කරන්න එපා
+  // 2. SAVE DATA (With Logic)
+  const handleSave = async () => {
     if (!user) return
-
     setSaving(true)
-    const { error } = await supabase.from('profiles').update({
-      full_name: fullName,
-      city: city,
-      birthday: birthday,
-      timezone: timezone,
-      updated_at: new Date(),
-    }).eq('id', user.id) // දැන් මෙතන අවුලක් නෑ
+
+    // ★ LOGIC: Nama Issarahata "Gangster" danna
+    let finalName = fullName.trim()
     
+    // Namata kalin "Gangster" nattam, api eka damu
+    if (!finalName.toLowerCase().startsWith('gangster')) {
+        finalName = `Gangster ${finalName}`
+    }
+
+    const updates = {
+      id: user.id,
+      full_name: finalName, // Auto-Gangster Name
+      city,
+      birthday,
+      avatar_url: avatarUrl, // Selected Avatar
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase.from('profiles').upsert(updates)
+
     if (error) {
-        alert(error.message)
+      alert('Error updating profile!')
     } else {
-        // Success වුනාම Home එකට යවන්න
-        router.push('/')
-        router.refresh() // Data refresh වෙන්න
+      // Success unama Home ekata yanna
+      router.push('/')
     }
     setSaving(false)
   }
 
-  // Loading වෙලාවේදී User ව පෙන්නන්නේ නෑ (Error එන එක නවතිනවා)
-  if (loading) return <div className="h-screen bg-[#050505] flex items-center justify-center text-white"><Loader2 className="animate-spin text-blue-500" /></div>
+  if (loading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>
 
   return (
-    <div className="min-h-screen bg-[#050505] p-6 flex flex-col items-center">
-      <div className="w-full max-w-lg">
-          <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
-              <ArrowLeft size={20}/> Back to Dashboard
-          </button>
+    <div className="min-h-screen bg-[#050505] text-white p-6 pb-20">
+      
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <button onClick={() => router.push('/')} className="p-2 bg-white/5 rounded-full hover:bg-white/10">
+            <ArrowLeft size={24} />
+        </button>
+        <h1 className="text-2xl font-black bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
+            PROFILE SETTINGS
+        </h1>
+      </div>
 
-          <div className="bg-white/5 border border-white/10 p-8 rounded-3xl backdrop-blur-xl shadow-2xl">
-            <h1 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">⚙️ Profile Settings</h1>
-
-            <div className="space-y-4">
-                <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Display Name</label>
-                    <div className="flex items-center bg-black/30 rounded-xl border border-white/10 px-4 py-3"><User size={18} className="text-gray-400 mr-3"/><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="bg-transparent flex-1 text-white outline-none text-sm"/></div>
-                </div>
-                <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Current City</label>
-                    <div className="flex items-center bg-black/30 rounded-xl border border-white/10 px-4 py-3"><MapPin size={18} className="text-gray-400 mr-3"/><input type="text" value={city} onChange={e => setCity(e.target.value)} className="bg-transparent flex-1 text-white outline-none text-sm"/></div>
-                </div>
-                <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Timezone</label>
-                    <div className="flex items-center bg-black/30 rounded-xl border border-white/10 px-4 py-3 relative"><Clock size={18} className="text-gray-400 mr-3"/><select value={timezone} onChange={e => setTimezone(e.target.value)} className="bg-transparent flex-1 text-white outline-none text-sm appearance-none cursor-pointer">{timezones.map(tz => <option key={tz.value} value={tz.value} className="bg-gray-900">{tz.label}</option>)}</select></div>
-                </div>
-                <div>
-                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Birthday</label>
-                    <div className="flex items-center bg-black/30 rounded-xl border border-white/10 px-4 py-3"><Calendar size={18} className="text-gray-400 mr-3"/><input type="date" value={birthday} onChange={e => setBirthday(e.target.value)} className="bg-transparent flex-1 text-white outline-none text-sm appearance-none"/></div>
-                </div>
-
-                <button onClick={handleUpdate} disabled={saving} className="w-full mt-6 bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
-                    {saving ? <Loader2 className="animate-spin" /> : <Save size={20}/>} Save Changes
-                </button>
-
-                <div className="border-t border-white/10 mt-6 pt-6">
-                    <button onClick={async () => { await supabase.auth.signOut(); router.replace('/login') }} className="w-full py-3 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 flex items-center justify-center gap-2"><LogOut size={20}/> Log Out</button>
-                </div>
+      <div className="space-y-6 max-w-lg mx-auto">
+        
+        {/* ★ AVATAR SELECTION */}
+        <div className="flex flex-col items-center gap-4 mb-6">
+            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-blue-500 shadow-lg shadow-blue-500/20">
+                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
             </div>
-          </div>
+            <p className="text-xs text-gray-500 uppercase tracking-widest font-bold">Choose your look</p>
+            
+            {/* Avatar Grid */}
+            <div className="flex gap-3 overflow-x-auto w-full pb-4 scrollbar-hide justify-center flex-wrap">
+                {AVATAR_PRESETS.map((url, index) => (
+                    <button 
+                        key={index} 
+                        onClick={() => setAvatarUrl(url)}
+                        className={`w-12 h-12 rounded-full overflow-hidden border-2 transition-all ${avatarUrl === url ? 'border-green-500 scale-110' : 'border-white/10 hover:border-white/50'}`}
+                    >
+                        <img src={url} className="w-full h-full object-cover" />
+                    </button>
+                ))}
+            </div>
+        </div>
+
+        {/* INPUT: NAME */}
+        <div>
+            <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2 flex items-center gap-2">
+                <User size={14} /> Gang Name
+            </label>
+            <div className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 flex items-center gap-2">
+                <span className="text-gray-500 font-mono text-sm select-none">Gangster</span>
+                <input 
+                    type="text" 
+                    value={fullName.replace(/gangster /i, '')} // Edit karaddi "Gangster" kalla pennanne na, eka auto watenawa
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="bg-transparent flex-1 outline-none text-white font-bold"
+                    placeholder="Your Name"
+                />
+            </div>
+            <p className="text-[10px] text-gray-500 mt-1">We will add "Gangster" prefix automatically.</p>
+        </div>
+
+        {/* INPUT: CITY */}
+        <div>
+            <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2 flex items-center gap-2">
+                <MapPin size={14} /> City / Base
+            </label>
+            <input 
+                type="text" 
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-colors"
+                placeholder="Where are you from?"
+            />
+        </div>
+
+        {/* INPUT: BIRTHDAY */}
+        <div>
+            <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2 flex items-center gap-2">
+                <Calendar size={14} /> Birthday
+            </label>
+            <input 
+                type="date" 
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-colors text-gray-400"
+            />
+        </div>
+
+        {/* SAVE BUTTON */}
+        <button 
+            onClick={handleSave} 
+            disabled={saving}
+            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+        >
+            {saving ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+            {saving ? 'Saving Profile...' : 'Save Changes'}
+        </button>
+
+        <div className="pt-6 border-t border-white/10 text-center">
+            <button 
+                onClick={async () => { await supabase.auth.signOut(); router.push('/login'); }}
+                className="text-red-400 text-xs font-bold hover:text-red-300 flex items-center justify-center gap-2 mx-auto"
+            >
+                <LogOutIcon size={14} /> SIGN OUT
+            </button>
+        </div>
+
       </div>
     </div>
   )
+}
+
+function LogOutIcon(props) {
+    return (
+        <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+    )
 }
