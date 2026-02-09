@@ -55,7 +55,7 @@ export default function SplashScreen({ finishLoading }) {
                 transition={{ delay: 1.2, duration: 0.8 }}
                 className="text-gray-400 text-xs font-medium tracking-[0.5em] uppercase"
             >
-                EST. 2024
+                EST. 2026
             </motion.p>
         </div>
 
