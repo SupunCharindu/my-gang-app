@@ -1,10 +1,66 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 
-// Fallback songs if DB is empty or fails
+// Free ambient sounds + chill music for vibes
 const DEFAULT_SONGS = [
-    { id: 'default-1', title: "Gang Theme", artist: "Beats", cover: "https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&h=300&fit=crop", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" },
-    { id: 'default-2', title: "Chill Vibes", artist: "Unknown", cover: "https://images.unsplash.com/photo-1459749411177-2a2f52983cbe?w=300&h=300&fit=crop", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3" },
+    // 🌧️ Ambient Sounds
+    {
+        id: 'ambient-1',
+        title: "Thunderstorm",
+        artist: "Ambient",
+        cover: "https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=300&h=300&fit=crop",
+        url: "https://cdn.pixabay.com/audio/2022/05/16/audio_1333dfb194.mp3"
+    },
+    {
+        id: 'ambient-2',
+        title: "Rain on Window",
+        artist: "Ambient",
+        cover: "https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=300&h=300&fit=crop",
+        url: "https://cdn.pixabay.com/audio/2022/02/22/audio_d1718ab41b.mp3"
+    },
+    {
+        id: 'ambient-3',
+        title: "Ocean Waves",
+        artist: "Ambient",
+        cover: "https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=300&h=300&fit=crop",
+        url: "https://cdn.pixabay.com/audio/2022/06/07/audio_b9bd4170e4.mp3"
+    },
+    {
+        id: 'ambient-4',
+        title: "Forest Birds",
+        artist: "Ambient",
+        cover: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=300&h=300&fit=crop",
+        url: "https://cdn.pixabay.com/audio/2022/08/04/audio_2dae70c083.mp3"
+    },
+    {
+        id: 'ambient-5',
+        title: "Fireplace Crackle",
+        artist: "Ambient",
+        cover: "https://images.unsplash.com/photo-1543076499-a6133cb932fd?w=300&h=300&fit=crop",
+        url: "https://cdn.pixabay.com/audio/2021/11/25/audio_91b32e02f9.mp3"
+    },
+    // 🎵 Chill Music
+    {
+        id: 'music-1',
+        title: "Lofi Chill",
+        artist: "SoundHelix",
+        cover: "https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&h=300&fit=crop",
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+    },
+    {
+        id: 'music-2',
+        title: "Night Drive",
+        artist: "SoundHelix",
+        cover: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop",
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3"
+    },
+    {
+        id: 'music-3',
+        title: "Sunset Groove",
+        artist: "SoundHelix",
+        cover: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&h=300&fit=crop",
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+    },
 ]
 
 export function useMusic() {
@@ -18,13 +74,17 @@ export function useMusic() {
 
     // Fetch songs from DB
     const fetchSongs = async () => {
-        const { data, error } = await supabase
-            .from('songs')
-            .select('*')
-            .order('created_at', { ascending: false })
+        try {
+            const { data, error } = await supabase
+                .from('songs')
+                .select('*')
+                .order('created_at', { ascending: false })
 
-        if (data && data.length > 0) {
-            setSongs(data)
+            if (data && data.length > 0) {
+                setSongs(data)
+            }
+        } catch (e) {
+            console.log('Using default songs')
         }
     }
 
@@ -81,17 +141,22 @@ export function useMusic() {
 
     const addSong = async (title, artist, url, cover) => {
         setIsAdding(true)
-        const { error } = await supabase.from('songs').insert([{
-            title,
-            artist: artist || 'Unknown',
-            url,
-            cover: cover || 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=300&h=300&fit=crop'
-        }])
-        setIsAdding(false)
-        if (!error) {
-            fetchSongs()
-            return true
+        try {
+            const { error } = await supabase.from('songs').insert([{
+                title,
+                artist: artist || 'Unknown',
+                url,
+                cover: cover || 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=300&h=300&fit=crop'
+            }])
+            if (!error) {
+                fetchSongs()
+                setIsAdding(false)
+                return true
+            }
+        } catch (e) {
+            console.error('Add song error:', e)
         }
+        setIsAdding(false)
         return false
     }
 

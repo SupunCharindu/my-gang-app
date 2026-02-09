@@ -37,9 +37,9 @@ const quickLinks = [
         gradient: 'from-red-500 to-orange-500'
     },
     {
-        name: 'Netflix',
+        name: 'ICC TV',
         icon: Clapperboard,
-        url: 'https://netflix.com',
+        url: 'https://www.icc-cricket.com/icc-tv/what-s-on-icctv',
         color: 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20',
         gradient: 'from-rose-600 to-red-600'
     },

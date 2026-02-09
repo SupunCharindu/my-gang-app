@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Play, Pause, SkipForward, SkipBack, Music, Plus, X, Link2, List, ChevronUp, Trash2 } from 'lucide-react'
+import { Play, Pause, SkipForward, SkipBack, Music, Plus, X, Link2, List } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMusic } from '@/hooks/useMusic'
 
@@ -176,8 +176,8 @@ export default function MusicPlayer() {
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => playSong && playSong(index)}
                                         className={`w-full flex items-center gap-3 p-2 rounded-xl transition-all text-left ${currentIndex === index
-                                                ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30'
-                                                : 'hover:bg-white/5'
+                                            ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30'
+                                            : 'hover:bg-white/5'
                                             }`}
                                     >
                                         <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-white/10">
@@ -227,6 +227,11 @@ export default function MusicPlayer() {
                                 <button onClick={() => setShowAddModal(false)} className="p-2 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-all"><X size={18} /></button>
                             </div>
 
+                            {/* Tip */}
+                            <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 mb-4">
+                                <p className="text-xs text-purple-300">💡 Use direct MP3 links from SoundCloud, Dropbox, or any file host!</p>
+                            </div>
+
                             <div className="space-y-4">
                                 <div>
                                     <label className="text-xs text-white/40 uppercase tracking-wide mb-1 block">Song Title *</label>
@@ -254,12 +259,12 @@ export default function MusicPlayer() {
                                         type="url"
                                         value={newSong.url}
                                         onChange={(e) => setNewSong({ ...newSong, url: e.target.value })}
-                                        placeholder="https://..."
+                                        placeholder="https://example.com/song.mp3"
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all"
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-xs text-white/40 uppercase tracking-wide mb-1 block">Cover URL</label>
+                                    <label className="text-xs text-white/40 uppercase tracking-wide mb-1 block">Cover Image URL</label>
                                     <input
                                         type="url"
                                         value={newSong.cover}
