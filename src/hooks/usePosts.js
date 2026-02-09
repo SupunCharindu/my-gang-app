@@ -109,14 +109,21 @@ export function usePosts(profile, showToast) {
     }
 
     const handleDeletePost = async () => {
-        if (!confirmDeleteId) return
-        const { error } = await supabase.from('posts').delete().eq('id', confirmDeleteId)
+        if (!confirmDeleteId || !profile) return
+
+        // Delete the post - RLS should handle authorization
+        const { error } = await supabase
+            .from('posts')
+            .delete()
+            .eq('id', confirmDeleteId)
+            .eq('user_id', profile.id) // Only delete if user owns the post
 
         if (!error) {
             setPosts(posts.filter(p => p.id !== confirmDeleteId))
             if (showToast) showToast('Post deleted!', 'success')
         } else {
-            if (showToast) showToast('Failed to delete.', 'error')
+            console.error('Delete error:', error)
+            if (showToast) showToast('Failed to delete. You can only delete your own posts.', 'error')
         }
         setConfirmDeleteId(null)
     }
