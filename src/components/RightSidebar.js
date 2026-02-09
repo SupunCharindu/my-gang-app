@@ -1,7 +1,6 @@
 'use client'
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Gift, MapPin, Gamepad2, Play, Clock, ExternalLink, Youtube, Clapperboard, Globe, Sparkles, Heart } from "lucide-react"
+import { Gift, MapPin, Gamepad2, Play, Clock, Youtube, Clapperboard, Globe, Sparkles, Heart } from "lucide-react"
 import { motion } from "framer-motion"
 import DiscordWidget from './DiscordWidget'
 import MusicPlayer from './MusicPlayer'
@@ -52,7 +51,7 @@ const quickLinks = [
     },
 ]
 
-export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
+export default function RightSidebar({ birthdays, onlineUsers, allProfiles, profile }) {
     const router = useRouter()
 
     const getLocalTime = (timezone) => {
@@ -77,49 +76,45 @@ export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
     return (
         <div className="flex flex-col h-full overflow-y-auto gap-3 scrollbar-thin px-2 md:px-0 pb-6">
 
-            {/* ========== 1. MUSIC + BIRTHDAYS ROW ========== */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Gang Tunes */}
-                <div className="md:col-span-1">
-                    <MusicPlayer />
-                </div>
+            {/* ========== 1. MUSIC PLAYER (FULL WIDTH) ========== */}
+            <MusicPlayer profile={profile} />
 
-                {/* Birthdays Mini Widget */}
-                <div className="p-4 rounded-2xl border border-white/[0.06] bg-[#0a0a0a] md:col-span-1">
-                    <h3 className="text-white/50 text-[11px] font-bold uppercase tracking-[0.12em] flex items-center gap-2 mb-3">
-                        <Gift size={14} className="text-pink-400" />
-                        Birthdays
-                    </h3>
-                    <div className="space-y-2">
-                        {birthdays?.slice(0, 3).map((bday, index) => (
-                            <div
-                                key={index}
-                                className={`flex items-center gap-2 p-2 rounded-xl ${bday.diffDays === 0 ? 'bg-pink-500/10' : 'bg-white/[0.02]'
-                                    }`}
-                            >
-                                <div className="w-8 h-8 rounded-full bg-gray-800 overflow-hidden border border-white/10 flex-shrink-0">
-                                    <img src={bday.avatar_url} className="w-full h-full object-cover" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-gray-200 truncate">{bday.full_name?.split(' ')[0]}</p>
-                                    <p className="text-[10px] text-gray-500">
-                                        {bday.diffDays === 0 ? (
-                                            <span className="text-pink-400">🎉 Today!</span>
-                                        ) : (
-                                            `${bday.diffDays}d`
-                                        )}
-                                    </p>
-                                </div>
+            {/* ========== 2. BIRTHDAYS ========== */}
+            <WidgetCard>
+                <WidgetTitle icon={Gift} iconColor="text-pink-400">
+                    Upcoming Birthdays
+                </WidgetTitle>
+                <div className="space-y-2">
+                    {birthdays?.slice(0, 3).map((bday, index) => (
+                        <div
+                            key={index}
+                            className={`flex items-center gap-3 p-2.5 rounded-xl ${bday.diffDays === 0 ? 'bg-pink-500/10 border border-pink-500/20' : 'bg-white/[0.02]'
+                                }`}
+                        >
+                            <div className="w-10 h-10 rounded-full bg-gray-800 overflow-hidden border border-white/10 flex-shrink-0">
+                                <img src={bday.avatar_url} className="w-full h-full object-cover" />
                             </div>
-                        ))}
-                        {(!birthdays || birthdays.length === 0) && (
-                            <p className="text-[10px] text-center py-4 text-gray-500">No upcoming</p>
-                        )}
-                    </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-200 truncate">{bday.full_name?.split(' ')[0]}</p>
+                                <p className="text-xs text-gray-500">
+                                    {bday.diffDays === 0 ? (
+                                        <span className="text-pink-400 font-bold">🎉 Today!</span>
+                                    ) : bday.diffDays === 1 ? (
+                                        <span className="text-pink-300">Tomorrow</span>
+                                    ) : (
+                                        `In ${bday.diffDays} days`
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                    {(!birthdays || birthdays.length === 0) && (
+                        <p className="text-xs text-center py-4 text-gray-500">No upcoming birthdays</p>
+                    )}
                 </div>
-            </div>
+            </WidgetCard>
 
-            {/* ========== 2. GAME ZONE (BIGGER) ========== */}
+            {/* ========== 3. GAME ZONE ========== */}
             <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
@@ -146,7 +141,7 @@ export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
                 </div>
             </motion.button>
 
-            {/* ========== 3. GANG STATUS ========== */}
+            {/* ========== 4. GANG STATUS ========== */}
             <WidgetCard>
                 <WidgetTitle
                     icon={() => (
@@ -209,7 +204,7 @@ export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
                 </div>
             </WidgetCard>
 
-            {/* ========== 4. QUICK LINKS ========== */}
+            {/* ========== 5. QUICK LINKS ========== */}
             <WidgetCard>
                 <WidgetTitle icon={Sparkles} iconColor="text-purple-400">
                     Quick Links
@@ -232,7 +227,7 @@ export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
                     ))}
                 </div>
 
-                {/* Fun Fact / Tip of the Day */}
+                {/* Gang Tip */}
                 <div className="mt-4 pt-4 border-t border-white/5">
                     <div className="flex items-start gap-2 p-3 rounded-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/10">
                         <Heart size={14} className="text-pink-400 mt-0.5 flex-shrink-0" />
@@ -246,7 +241,7 @@ export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
                 </div>
             </WidgetCard>
 
-            {/* ========== 5. DISCORD ========== */}
+            {/* ========== 6. DISCORD ========== */}
             <DiscordWidget />
 
         </div>

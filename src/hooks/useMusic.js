@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useMusicSync } from './useMusicSync'
 
 // Free ambient sounds + chill music for vibes
 const DEFAULT_SONGS = [
@@ -63,17 +64,21 @@ const DEFAULT_SONGS = [
     },
 ]
 
-export function useMusic() {
+export function useMusic(profile) {
     const [songs, setSongs] = useState(DEFAULT_SONGS)
     const [currentIndex, setCurrentIndex] = useState(0)
     const [isPlaying, setIsPlaying] = useState(false)
     const [progress, setProgress] = useState(0)
+    const [duration, setDuration] = useState(0)
     const [isAdding, setIsAdding] = useState(false)
     const audioRef = useRef(null)
     const supabase = createClient()
 
+    // Party sync hook
+    const sync = useMusicSync(profile)
+
     // Fetch songs from DB
-    const fetchSongs = async () => {
+    const fetchSongs = useCallback(async () => {
         try {
             const { data, error } = await supabase
                 .from('songs')
@@ -86,7 +91,7 @@ export function useMusic() {
         } catch (e) {
             console.log('Using default songs')
         }
-    }
+    }, [supabase])
 
     useEffect(() => {
         fetchSongs()
@@ -99,7 +104,32 @@ export function useMusic() {
             .subscribe()
 
         return () => supabase.removeChannel(channel)
-    }, [])
+    }, [fetchSongs, supabase])
+
+    // Sync to party state when not DJ
+    useEffect(() => {
+        if (!sync.partyMode || sync.isDJ || !sync.partyState) return
+
+        // Sync song index
+        if (sync.partyState.song_index !== currentIndex) {
+            setCurrentIndex(sync.partyState.song_index)
+        }
+
+        // Sync playing state
+        if (sync.partyState.is_playing !== isPlaying) {
+            setIsPlaying(sync.partyState.is_playing)
+        }
+
+        // Sync position (with tolerance to avoid constant jumping)
+        if (audioRef.current && sync.partyState.position) {
+            const currentPos = audioRef.current.currentTime
+            const syncPos = sync.partyState.position
+            // Only seek if more than 3 seconds off
+            if (Math.abs(currentPos - syncPos) > 3) {
+                audioRef.current.currentTime = syncPos
+            }
+        }
+    }, [sync.partyState, sync.partyMode, sync.isDJ, currentIndex, isPlaying])
 
     // Audio control
     useEffect(() => {
@@ -117,13 +147,14 @@ export function useMusic() {
         if (isPlaying && audioRef.current) {
             audioRef.current.play().catch(e => console.error(e))
         }
-    }, [currentIndex])
+    }, [currentIndex, isPlaying])
 
     const handleTimeUpdate = () => {
         if (audioRef.current) {
             const current = audioRef.current.currentTime
-            const duration = audioRef.current.duration || 1
-            setProgress((current / duration) * 100)
+            const dur = audioRef.current.duration || 1
+            setProgress((current / dur) * 100)
+            setDuration(dur)
         }
     }
 
@@ -131,13 +162,42 @@ export function useMusic() {
         nextTrack()
     }
 
-    const nextTrack = () => {
-        setCurrentIndex((prev) => (prev + 1) % songs.length)
-    }
+    // Broadcast-aware controls (DJ broadcasts changes)
+    const setIsPlayingWithSync = useCallback((playing) => {
+        setIsPlaying(playing)
+        if (sync.isDJ && sync.partyMode) {
+            const song = songs[currentIndex]
+            const position = audioRef.current?.currentTime || 0
+            sync.broadcastState(currentIndex, song?.id || '', position, playing)
+        }
+    }, [sync, currentIndex, songs])
 
-    const prevTrack = () => {
-        setCurrentIndex((prev) => (prev - 1 + songs.length) % songs.length)
-    }
+    const nextTrack = useCallback(() => {
+        const newIndex = (currentIndex + 1) % songs.length
+        setCurrentIndex(newIndex)
+        if (sync.isDJ && sync.partyMode) {
+            const song = songs[newIndex]
+            sync.broadcastState(newIndex, song?.id || '', 0, isPlaying)
+        }
+    }, [currentIndex, songs, sync, isPlaying])
+
+    const prevTrack = useCallback(() => {
+        const newIndex = (currentIndex - 1 + songs.length) % songs.length
+        setCurrentIndex(newIndex)
+        if (sync.isDJ && sync.partyMode) {
+            const song = songs[newIndex]
+            sync.broadcastState(newIndex, song?.id || '', 0, isPlaying)
+        }
+    }, [currentIndex, songs, sync, isPlaying])
+
+    const playSong = useCallback((index) => {
+        setCurrentIndex(index)
+        setIsPlaying(true)
+        if (sync.isDJ && sync.partyMode) {
+            const song = songs[index]
+            sync.broadcastState(index, song?.id || '', 0, true)
+        }
+    }, [sync, songs])
 
     const addSong = async (title, artist, url, cover) => {
         setIsAdding(true)
@@ -160,9 +220,45 @@ export function useMusic() {
         return false
     }
 
-    const playSong = (index) => {
-        setCurrentIndex(index)
-        setIsPlaying(true)
+    // Delete song from playlist
+    const deleteSong = async (songId) => {
+        console.log('Attempting to delete song:', songId)
+        try {
+            const { data, error } = await supabase
+                .from('songs')
+                .delete()
+                .eq('id', songId)
+                .select()
+
+            console.log('Delete result:', { data, error })
+
+            if (error) {
+                console.error('Delete error:', error)
+                return false
+            }
+
+            // Adjust current index if needed
+            const deletedIndex = songs.findIndex(s => s.id === songId)
+            if (deletedIndex !== -1 && deletedIndex < currentIndex) {
+                setCurrentIndex(prev => prev - 1)
+            } else if (deletedIndex === currentIndex && songs.length > 1) {
+                setCurrentIndex(prev => prev >= songs.length - 1 ? 0 : prev)
+            }
+
+            // Optimistically update local state
+            setSongs(prev => prev.filter(s => s.id !== songId))
+
+            return true
+        } catch (e) {
+            console.error('Delete song error:', e)
+        }
+        return false
+    }
+
+    // Start party with current song
+    const startParty = async () => {
+        const song = songs[currentIndex]
+        return await sync.startParty(currentIndex, song?.id || '')
     }
 
     const currentSong = songs[currentIndex] || DEFAULT_SONGS[0]
@@ -171,15 +267,22 @@ export function useMusic() {
         songs,
         currentSong,
         currentIndex,
-        isPlaying, setIsPlaying,
+        isPlaying,
+        setIsPlaying: setIsPlayingWithSync,
         progress,
+        duration,
         audioRef,
         handleTimeUpdate,
         handleEnded,
         nextTrack,
         prevTrack,
         addSong,
+        deleteSong,
         isAdding,
-        playSong
+        playSong,
+        // Party sync
+        sync,
+        startParty
     }
 }
+

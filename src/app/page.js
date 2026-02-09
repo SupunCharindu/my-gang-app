@@ -96,8 +96,8 @@ export default function Home() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.9 }}
             className={`fixed top-6 left-1/2 transform -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl flex items-center gap-3 shadow-2xl backdrop-blur-xl border ${toast.type === 'success'
-                ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                : 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+              : 'bg-rose-500/20 border-rose-500/30 text-rose-400'
               }`}
           >
             {toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}
@@ -183,8 +183,8 @@ export default function Home() {
           </button>
           <button className="relative group">
             <div className={`w-10 h-10 md:w-11 md:h-11 rounded-full overflow-hidden ring-2 ring-offset-2 ring-offset-[#030303] transition-all ${isMyBirthday
-                ? 'ring-yellow-400 animate-pulse'
-                : 'ring-purple-500/50 group-hover:ring-purple-400'
+              ? 'ring-yellow-400 animate-pulse'
+              : 'ring-purple-500/50 group-hover:ring-purple-400'
               }`}>
               <img src={profile?.avatar_url} alt="Profile" className="w-full h-full object-cover" />
             </div>
@@ -270,7 +270,7 @@ export default function Home() {
               exit={{ opacity: 0, x: 20 }}
               className={`${activeTab === 'extras' ? 'flex' : 'hidden'} md:flex flex-col h-full md:col-span-3 overflow-hidden pb-20 md:pb-0`}
             >
-              <RightSidebar birthdays={birthdays} onlineUsers={onlineUsers} allProfiles={allProfiles} />
+              <RightSidebar birthdays={birthdays} onlineUsers={onlineUsers} allProfiles={allProfiles} profile={profile} />
             </motion.div>
           )}
         </AnimatePresence>
