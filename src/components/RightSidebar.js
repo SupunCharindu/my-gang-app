@@ -1,141 +1,254 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation' // Omi Game එකට යන්න ඕන නිසා
-import { Gift, MapPin, Activity, Trophy, Gamepad2, Play } from "lucide-react" // Icons
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Gift, MapPin, Gamepad2, Play, Clock, ExternalLink, Youtube, Clapperboard, Globe, Sparkles, Heart } from "lucide-react"
 import { motion } from "framer-motion"
 import DiscordWidget from './DiscordWidget'
+import MusicPlayer from './MusicPlayer'
 
-export default function RightSidebar({ birthdays }) {
-  const supabase = createClient()
-  const router = useRouter() // Router එක ගත්තා
-  const [onlineUsers, setOnlineUsers] = useState([])
-  const [allProfiles, setAllProfiles] = useState([])
-  
-  // Cricket States
-  const [matches, setMatches] = useState([])
-  const [selectedMatch, setSelectedMatch] = useState(null)
-  const [loadingCricket, setLoadingCricket] = useState(true)
+// Shared Widget Wrapper Component
+function WidgetCard({ children, className = "" }) {
+    return (
+        <div className={`p-4 rounded-2xl border border-white/[0.06] bg-[#0a0a0a] ${className}`}>
+            {children}
+        </div>
+    )
+}
 
-  // --- CRICKET DATA FETCHING ---
-  useEffect(() => {
-    const fetchCricket = async () => {
+function WidgetTitle({ icon: Icon, iconColor = "text-gray-400", children, badge }) {
+    return (
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-white/50 text-[11px] font-bold uppercase tracking-[0.12em] flex items-center gap-2">
+                {typeof Icon === 'function' ? <Icon /> : <Icon size={14} className={iconColor} />}
+                {children}
+            </h3>
+            {badge}
+        </div>
+    )
+}
+
+// Quick Links Data
+const quickLinks = [
+    {
+        name: 'YouTube',
+        icon: Youtube,
+        url: 'https://youtube.com',
+        color: 'bg-red-500/10 text-red-400 hover:bg-red-500/20',
+        gradient: 'from-red-500 to-orange-500'
+    },
+    {
+        name: 'Netflix',
+        icon: Clapperboard,
+        url: 'https://netflix.com',
+        color: 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20',
+        gradient: 'from-rose-600 to-red-600'
+    },
+    {
+        name: 'Cricbuzz',
+        icon: Globe,
+        url: 'https://cricbuzz.com',
+        color: 'bg-green-500/10 text-green-400 hover:bg-green-500/20',
+        gradient: 'from-green-500 to-emerald-500'
+    },
+]
+
+export default function RightSidebar({ birthdays, onlineUsers, allProfiles }) {
+    const router = useRouter()
+
+    const getLocalTime = (timezone) => {
         try {
-            const res = await fetch('/api/cricket')
-            const data = await res.json()
-            
-            if (data.status === "success" && data.data) {
-                const sortedMatches = data.data.sort((a, b) => {
-                    if (a.matchStarted && !a.matchEnded) return -1
-                    return 1
-                });
-                setMatches(sortedMatches)
-                if (!selectedMatch && sortedMatches.length > 0) {
-                    setSelectedMatch(sortedMatches[0])
-                }
-            }
-        } catch (error) {
-            console.error("Cricket Error:", error)
-        } finally {
-            setLoadingCricket(false)
+            return new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: true })
+        } catch {
+            return 'Time'
         }
     }
-    fetchCricket()
-    const interval = setInterval(fetchCricket, 60000)
-    return () => clearInterval(interval)
-  }, []) 
+    const isNight = (timezone) => {
+        try {
+            const hour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }));
+            return hour < 6 || hour > 18
+        } catch {
+            return false
+        }
+    }
 
-  // --- PROFILES & ONLINE STATUS ---
-  useEffect(() => {
-    const getProfiles = async () => { const { data } = await supabase.from('profiles').select('*'); if (data) setAllProfiles(data) }
-    getProfiles()
-  }, [])
+    // Count online users
+    const onlineCount = onlineUsers?.length || 0
 
-  useEffect(() => {
-    const channel = supabase.channel('online-users')
-    channel.on('presence', { event: 'sync' }, () => { const newState = channel.presenceState(); const users = []; for (let id in newState) { users.push(newState[id][0]) } setOnlineUsers(users) }).subscribe(async (status) => { if (status === 'SUBSCRIBED') { const { data: { user } } = await supabase.auth.getUser(); if (user) { await channel.track({ online_at: new Date().toISOString(), user_id: user.id }) } } })
-    return () => { supabase.removeChannel(channel) }
-  }, [])
-  
-  const getLocalTime = (timezone) => { try { return new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: true }) } catch { return 'Time' } }
-  const isNight = (timezone) => { try { const hour = new Date().toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', hour12: false }); return hour < 6 || hour > 18 } catch { return false } }
+    return (
+        <div className="flex flex-col h-full overflow-y-auto gap-3 scrollbar-thin px-2 md:px-0 pb-6">
 
-  return (
-    <div className="md:col-span-3 flex flex-col h-full overflow-y-auto gap-6 scrollbar-hide pb-4">
-      
-      {/* 1. GANG STATUS (ONLINE USERS) */}
-      <div className="glass-panel p-5 rounded-3xl flex-shrink-0 border border-white/10 bg-[#050505]/50">
-         <h3 className="text-gray-400 text-sm font-medium mb-4 flex items-center gap-2"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span>Gang Status</h3>
-         <div className="space-y-4">
-           {allProfiles.map((user) => {
-               const isOnline = onlineUsers.find(u => u.user_id === user.id); const localTime = getLocalTime(user.timezone || 'Asia/Colombo'); const nightMode = isNight(user.timezone || 'Asia/Colombo')
-               return (<motion.div whileHover={{ scale: 1.02 }} key={user.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isOnline ? 'bg-white/10 border-green-500/30' : 'bg-transparent border-white/5 opacity-60'}`}><div className="relative"><div className="w-10 h-10 rounded-full bg-gray-800 overflow-hidden border border-white/10"><img src={user.avatar_url} className="w-full h-full object-cover"/></div>{isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-black rounded-full"></div>}</div><div className="flex-1"><div className="flex justify-between items-center"><p className="text-sm font-bold text-gray-200">{user.full_name?.split(' ')[0]}</p><p className={`text-xs font-mono ${nightMode ? 'text-blue-300' : 'text-yellow-300'}`}>{localTime}</p></div><div className="flex items-center gap-1 mt-0.5"><MapPin size={10} className="text-gray-500"/><p className="text-[10px] text-gray-400">{user.city || 'Unknown'}</p></div></div></motion.div>)
-           })}
-         </div>
-      </div>
-
-      {/* 2. ★ NEW GAME ZONE (OMI) ★ - Added Here */}
-      <div className="glass-panel p-5 rounded-3xl flex-shrink-0 border border-white/10 bg-[#050505]/50 relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 blur-3xl rounded-full pointer-events-none"></div>
-        <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
-          <Gamepad2 size={14} className="text-green-500" /> Game Zone
-        </h3>
-        <button 
-            onClick={() => router.push('/game')}
-            className="w-full group/btn relative overflow-hidden bg-gradient-to-r from-green-700 to-emerald-600 hover:from-green-600 hover:to-emerald-500 text-white p-4 rounded-2xl transition-all active:scale-95 shadow-lg border border-white/10 z-10"
-        >
-            <div className="relative z-10 flex items-center justify-between">
-                <div className="text-left">
-                    <h4 className="font-black text-xl italic tracking-tight">OMI</h4>
-                    <p className="text-[10px] text-green-200 font-medium">Let's Play Cards!</p>
+            {/* ========== 1. MUSIC + BIRTHDAYS ROW ========== */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Gang Tunes */}
+                <div className="md:col-span-1">
+                    <MusicPlayer />
                 </div>
-                <div className="w-10 h-10 bg-black/20 rounded-full flex items-center justify-center group-hover/btn:bg-white/20 transition-colors">
-                    <Play size={20} fill="currentColor" />
+
+                {/* Birthdays Mini Widget */}
+                <div className="p-4 rounded-2xl border border-white/[0.06] bg-[#0a0a0a] md:col-span-1">
+                    <h3 className="text-white/50 text-[11px] font-bold uppercase tracking-[0.12em] flex items-center gap-2 mb-3">
+                        <Gift size={14} className="text-pink-400" />
+                        Birthdays
+                    </h3>
+                    <div className="space-y-2">
+                        {birthdays?.slice(0, 3).map((bday, index) => (
+                            <div
+                                key={index}
+                                className={`flex items-center gap-2 p-2 rounded-xl ${bday.diffDays === 0 ? 'bg-pink-500/10' : 'bg-white/[0.02]'
+                                    }`}
+                            >
+                                <div className="w-8 h-8 rounded-full bg-gray-800 overflow-hidden border border-white/10 flex-shrink-0">
+                                    <img src={bday.avatar_url} className="w-full h-full object-cover" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-medium text-gray-200 truncate">{bday.full_name?.split(' ')[0]}</p>
+                                    <p className="text-[10px] text-gray-500">
+                                        {bday.diffDays === 0 ? (
+                                            <span className="text-pink-400">🎉 Today!</span>
+                                        ) : (
+                                            `${bday.diffDays}d`
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+                        ))}
+                        {(!birthdays || birthdays.length === 0) && (
+                            <p className="text-[10px] text-center py-4 text-gray-500">No upcoming</p>
+                        )}
+                    </div>
                 </div>
             </div>
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover/btn:animate-[shimmer_1s_infinite]"></div>
-        </button>
-      </div>
 
-      {/* 3. CRICKET WIDGET (FULL VERSION) */}
-      <div className="glass-panel rounded-3xl flex-shrink-0 relative overflow-hidden flex flex-col h-[400px] border border-white/10">
-         <div className="p-4 bg-gradient-to-b from-blue-900/40 to-transparent border-b border-white/5 relative flex-shrink-0">
-            <div className="absolute top-4 right-4 flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span><span className="text-[10px] text-red-400 font-bold tracking-wider">LIVE</span></div>
-            <div className="flex items-center gap-2 mb-2"><Trophy size={14} className="text-yellow-500"/><span className="text-[10px] text-yellow-500 font-bold tracking-wider">MATCH CENTER</span></div>
-            {selectedMatch ? (
-                <div className="mt-2 animate-in fade-in duration-500">
-                    <p className="text-[9px] text-gray-400 mb-2 uppercase tracking-wide truncate pr-8">{selectedMatch.matchType} • {selectedMatch.venue?.split(',')[0]}</p>
-                    <div className="flex flex-col gap-2 bg-black/20 p-3 rounded-xl border border-white/5">
-                        <div className="flex justify-between items-center"><span className="font-bold text-sm text-white truncate max-w-[100px]">{selectedMatch.teams[0]}</span><span className="font-mono text-sm font-bold">{selectedMatch.score?.[0]?.r || 0}/{selectedMatch.score?.[0]?.w || 0} <span className="text-[9px] text-gray-500">({selectedMatch.score?.[0]?.o || 0})</span></span></div>
-                        <div className="h-px bg-white/10 w-full"></div>
-                        <div className="flex justify-between items-center"><span className="font-bold text-sm text-gray-400 truncate max-w-[100px]">{selectedMatch.teams[1]}</span><span className="font-mono text-sm font-bold text-gray-400">{selectedMatch.score?.[1]?.r || 0}/{selectedMatch.score?.[1]?.w || 0} <span className="text-[9px] text-gray-500">({selectedMatch.score?.[1]?.o || 0})</span></span></div>
+            {/* ========== 2. GAME ZONE (BIGGER) ========== */}
+            <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => router.push('/game')}
+                className="w-full py-8 px-6 rounded-2xl relative overflow-hidden bg-gradient-to-br from-green-600 via-emerald-600 to-teal-600 text-white shadow-xl shadow-emerald-500/20 border border-white/10"
+            >
+                {/* Animated Background */}
+                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4xKSIvPjwvc3ZnPg==')] opacity-50"></div>
+                <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2"></div>
+                <div className="absolute bottom-0 left-0 w-32 h-32 bg-teal-400/20 blur-3xl rounded-full translate-y-1/2 -translate-x-1/2"></div>
+
+                <div className="relative z-10 flex items-center justify-between">
+                    <div className="text-left">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Gamepad2 size={20} />
+                            <span className="text-[11px] bg-white/20 px-2.5 py-1 rounded-full font-bold uppercase tracking-wide">Card Game</span>
+                        </div>
+                        <h4 className="font-black text-4xl tracking-tight leading-none">OMI</h4>
+                        <p className="text-[13px] text-white/70 mt-2">Tap to play with your gang!</p>
                     </div>
-                    <p className="text-[10px] text-blue-300 mt-2 font-medium text-center truncate">{selectedMatch.status}</p>
+                    <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center backdrop-blur-sm border border-white/10">
+                        <Play size={40} fill="currentColor" className="ml-1" />
+                    </div>
                 </div>
-            ) : (
-                <div className="py-8 text-center text-gray-500 text-xs flex flex-col items-center">{loadingCricket ? <Activity className="animate-spin mb-2 text-blue-500"/> : <Trophy className="mb-2 opacity-50"/>}{loadingCricket ? "Fetching Scores..." : "Select a match"}</div>
-            )}
-         </div>
+            </motion.button>
 
-         <div className="flex-1 overflow-y-auto bg-[#050505]/30 p-2 space-y-2 scrollbar-thin scrollbar-thumb-gray-700">
-            <p className="text-[9px] text-gray-500 px-2 py-1 uppercase tracking-wider font-bold sticky top-0 bg-[#050505]/80 backdrop-blur-sm z-10">All Matches</p>
-            {matches.map((match) => (
-                <div key={match.id} onClick={() => setSelectedMatch(match)} className={`p-2.5 rounded-xl cursor-pointer transition-all border group ${selectedMatch?.id === match.id ? 'bg-blue-600/20 border-blue-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}>
-                    <div className="flex justify-between items-center mb-1"><span className="text-[8px] text-gray-400 uppercase">{match.matchType}</span>{match.matchStarted && !match.matchEnded && <span className="flex items-center gap-1 text-[8px] text-red-400"><span className="w-1 h-1 rounded-full bg-red-500 animate-pulse"></span> LIVE</span>}</div>
-                    <div className="flex justify-between items-center text-[11px] font-medium"><span className={`truncate max-w-[80px] ${selectedMatch?.id === match.id ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>{match.teams[0]}</span><span className="text-gray-600 text-[9px]">VS</span><span className={`truncate max-w-[80px] ${selectedMatch?.id === match.id ? 'text-white' : 'text-gray-300 group-hover:text-white'}`}>{match.teams[1]}</span></div>
+            {/* ========== 3. GANG STATUS ========== */}
+            <WidgetCard>
+                <WidgetTitle
+                    icon={() => (
+                        <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                        </span>
+                    )}
+                    badge={<span className="text-[10px] text-emerald-400 font-semibold">{onlineCount} online</span>}
+                >
+                    Gang Status
+                </WidgetTitle>
+
+                <div className="space-y-2">
+                    {allProfiles?.map((user) => {
+                        const isOnline = onlineUsers?.some(u => u.user_id === user.id)
+                        const localTime = getLocalTime(user.timezone || 'Asia/Colombo')
+                        const nightMode = isNight(user.timezone || 'Asia/Colombo')
+
+                        return (
+                            <div
+                                key={user.id}
+                                className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${isOnline
+                                    ? 'bg-emerald-500/10 border border-emerald-500/20'
+                                    : 'opacity-40 border border-transparent'
+                                    }`}
+                            >
+                                <div className="relative flex-shrink-0">
+                                    <div className={`w-10 h-10 rounded-full bg-gray-800 overflow-hidden border-2 ${isOnline ? 'border-emerald-500/50' : 'border-white/10'
+                                        }`}>
+                                        <img src={user.avatar_url} className="w-full h-full object-cover" />
+                                    </div>
+                                    {isOnline && (
+                                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#0a0a0a] rounded-full"></div>
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-semibold text-gray-200 truncate">{user.full_name?.split(' ')[0]}</p>
+                                        {isOnline && (
+                                            <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-medium">ONLINE</span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5">
+                                        <MapPin size={9} />
+                                        <span className="truncate">{user.city || 'Unknown'}</span>
+                                    </div>
+                                </div>
+                                <div className={`text-[10px] font-mono px-2 py-1 rounded-lg flex items-center gap-1 ${nightMode ? 'bg-blue-500/10 text-blue-300' : 'bg-amber-500/10 text-amber-300'
+                                    }`}>
+                                    <Clock size={9} />
+                                    {localTime}
+                                </div>
+                            </div>
+                        )
+                    })}
+                    {(!allProfiles || allProfiles.length === 0) && (
+                        <p className="text-xs text-center py-4 text-gray-500">No gang members found</p>
+                    )}
                 </div>
-            ))}
-         </div>
-      </div>
+            </WidgetCard>
 
-      {/* 4. DISCORD & BIRTHDAYS */}
-      <DiscordWidget />
+            {/* ========== 4. QUICK LINKS ========== */}
+            <WidgetCard>
+                <WidgetTitle icon={Sparkles} iconColor="text-purple-400">
+                    Quick Links
+                </WidgetTitle>
 
-      <div className="glass-panel p-5 rounded-3xl flex-shrink-0 border border-white/10 bg-[#050505]/50">
-         <h3 className="text-gray-400 text-sm font-medium mb-4 flex items-center gap-2"><Gift size={16} className="text-pink-400" /> Upcoming Birthdays</h3>
-         <div className="space-y-3">{birthdays.map((bday, index) => (<div key={index} className="flex items-center gap-3 p-2 hover:bg-white/5 rounded-xl transition-all cursor-pointer group"><div className="w-8 h-8 rounded-full bg-gray-800 overflow-hidden border border-white/10"><img src={bday.avatar_url} className="w-full h-full object-cover"/></div><div className="flex-1"><p className="text-sm font-medium text-gray-200 group-hover:text-pink-300 transition-colors">{bday.full_name}</p><p className="text-xs text-gray-500">{bday.diffDays === 0 ? 'Today! 🎉' : `${bday.diffDays} days left`}</p></div></div>))}{birthdays.length === 0 && <p className="text-xs text-center py-4 text-gray-500">No upcoming birthdays</p>}</div>
-      </div>
+                <div className="grid grid-cols-3 gap-2">
+                    {quickLinks.map((link, index) => (
+                        <motion.a
+                            key={index}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className={`flex flex-col items-center gap-2 p-3 rounded-xl transition-all ${link.color}`}
+                        >
+                            <link.icon size={20} />
+                            <span className="text-[10px] font-medium">{link.name}</span>
+                        </motion.a>
+                    ))}
+                </div>
 
-    </div>
-  )
+                {/* Fun Fact / Tip of the Day */}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/10">
+                        <Heart size={14} className="text-pink-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Gang Tip</p>
+                            <p className="text-xs text-gray-300 leading-relaxed">
+                                Brothers support each other. Check in on your gang today! 💪
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </WidgetCard>
+
+            {/* ========== 5. DISCORD ========== */}
+            <DiscordWidget />
+
+        </div>
+    )
 }
