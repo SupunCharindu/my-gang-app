@@ -1,10 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, RefreshCw, Users } from 'lucide-react'
+import { ArrowLeft, Crown, AlertCircle } from 'lucide-react'
+import { isValidMove, determineTrickWinner } from '@/utils/omiRules' // අපි හදපු නීති පොත
 
-// OMI DECK (32 Cards: 7 to Ace)
+// Constants
 const SUITS = ['♠️', '♥️', '♣️', '♦️']
 const RANKS = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A']
 
@@ -15,60 +16,70 @@ const generateDeck = () => {
       deck.push({ id: `${rank}${suit}`, rank, suit, color: (suit === '♥️' || suit === '♦️') ? 'text-red-500' : 'text-black' })
     })
   })
-  return deck.sort(() => Math.random() - 0.5) // Shuffle
+  return deck.sort(() => Math.random() - 0.5)
 }
 
 export default function OmiGame() {
   const [user, setUser] = useState(null)
-  const [players, setPlayers] = useState({})
-  const [myHand, setMyHand] = useState([])
-  const [tableCards, setTableCards] = useState([])
-  const [gameStatus, setGameStatus] = useState('waiting') // waiting, playing
-
   const router = useRouter()
   const supabase = createClient()
 
-  // 1. Initial Setup
+  // --- GAME STATE (Synced) ---
+  const [players, setPlayers] = useState([]) 
+  const [dealerIndex, setDealerIndex] = useState(0)
+  const [turnIndex, setTurnIndex] = useState(0) // කාගෙ වාරේද?
+  const [trumpSuit, setTrumpSuit] = useState(null)
+  const [gamePhase, setGamePhase] = useState('waiting') // waiting, calling_trump, playing
+  
+  const [scores, setScores] = useState({ team1: 0, team2: 0 }) // Overall Game Points (0-10)
+  const [tricks, setTricks] = useState({ team1: 0, team2: 0 }) // Current Round Tokens
+  
+  const [tableCards, setTableCards] = useState([])
+  const [myHand, setMyHand] = useState([])
+  
+  // Local only
+  const [alertMsg, setAlertMsg] = useState(null)
+  const [currentDeck, setCurrentDeck] = useState([])
+
+  // --- 1. SETUP & REALTIME ---
   useEffect(() => {
     const setup = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       setUser(profile)
 
-      // Join the Game Channel
-      const channel = supabase.channel('omi-room')
-      
-      channel
-        .on('broadcast', { event: 'player-join' }, ({ payload }) => {
-            setPlayers(prev => ({ ...prev, [payload.id]: payload }))
+      const channel = supabase.channel('omi-logic-room')
+        .on('broadcast', { event: 'sync-state' }, ({ payload }) => {
+             setPlayers(payload.players)
+             setDealerIndex(payload.dealerIndex)
+             setTurnIndex(payload.turnIndex)
+             setTrumpSuit(payload.trumpSuit)
+             setGamePhase(payload.gamePhase)
+             setScores(payload.scores)
+             setTricks(payload.tricks)
+             setTableCards(payload.tableCards || [])
         })
-        .on('broadcast', { event: 'deal-cards' }, ({ payload }) => {
-            // Find my cards from the dealt payload
-            if (payload.hands[session.user.id]) {
-                setMyHand(payload.hands[session.user.id])
-                setGameStatus('playing')
-                setTableCards([])
-            }
+        .on('broadcast', { event: 'receive-cards' }, ({ payload }) => {
+             if (payload.hands[session.user.id]) setMyHand(payload.hands[session.user.id])
         })
-        .on('broadcast', { event: 'play-card' }, ({ payload }) => {
-            setTableCards(prev => [...prev, payload])
-        })
-        .on('broadcast', { event: 'reset-table' }, () => {
-            setTableCards([])
+        .on('broadcast', { event: 'trick-winner' }, ({ payload }) => {
+             // වටේ දිනපු කෙනා පෙන්නන්න (Animation එකක් දාන්න පුළුවන් පස්සේ)
+             setAlertMsg(`${payload.winnerName} won the trick!`)
+             setTimeout(() => setAlertMsg(null), 2000)
         })
         .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                // I joined, tell everyone
-                if (profile) {
-                    await channel.send({
-                        type: 'broadcast',
-                        event: 'player-join',
-                        payload: { id: profile.id, name: profile.full_name, avatar: profile.avatar_url }
-                    })
-                }
+            if (status === 'SUBSCRIBED' && profile) {
+                await channel.send({ type: 'broadcast', event: 'join-req', payload: profile })
             }
+        })
+
+        // Host handles joins
+        channel.on('broadcast', { event: 'join-req' }, ({ payload }) => {
+            setPlayers(prev => {
+                if (prev.find(p => p.id === payload.id)) return prev
+                return [...prev, { id: payload.id, name: payload.full_name, avatar: payload.avatar_url }]
+            })
         })
 
         return () => supabase.removeChannel(channel)
@@ -76,120 +87,232 @@ export default function OmiGame() {
     setup()
   }, [])
 
-  // 2. Game Logic Functions
-  const handleDeal = async () => {
-    const deck = generateDeck()
-    const hands = {}
-    const playerIds = Object.keys(players)
-    
-    // Distribute 8 cards to first 4 players
-    // Note: If playing alone for testing, it just gives you cards
-    if (playerIds.length === 0 && user) {
-        hands[user.id] = deck.slice(0, 8)
-    } else {
-        playerIds.slice(0, 4).forEach((pid, index) => {
-            hands[pid] = deck.slice(index * 8, (index + 1) * 8)
-        })
-    }
+  // --- 2. GAME LOGIC (Run by Active Player) ---
 
-    await supabase.channel('omi-room').send({
-        type: 'broadcast',
-        event: 'deal-cards',
-        payload: { hands }
-    })
+  const syncGame = async (updates) => {
+      await supabase.channel('omi-logic-room').send({
+          type: 'broadcast',
+          event: 'sync-state',
+          payload: {
+              players, dealerIndex, turnIndex, trumpSuit, gamePhase, scores, tricks, tableCards,
+              ...updates
+          }
+      })
   }
 
-  const playCard = async (card) => {
-    if (gameStatus !== 'playing') return
+  // A. START ROUND
+  const startRound = async () => {
+      const deck = generateDeck()
+      setCurrentDeck(deck)
+      
+      const hands = {}
+      hands[players[dealerIndex].id] = deck.slice(0, 4) // Dealer gets 4
 
-    // Remove from my hand
-    setMyHand(prev => prev.filter(c => c.id !== card.id))
-
-    // Send to table
-    if (user) {
-        await supabase.channel('omi-room').send({
-            type: 'broadcast',
-            event: 'play-card',
-            payload: { card, player: user.full_name }
-        })
-    }
+      await syncGame({ 
+          gamePhase: 'calling_trump', 
+          trumpSuit: null, 
+          tricks: { team1: 0, team2: 0 },
+          tableCards: [],
+          turnIndex: dealerIndex // Dealer ගෙන් පටන් ගන්නේ
+      })
+      await supabase.channel('omi-logic-room').send({ type: 'broadcast', event: 'receive-cards', payload: { hands } })
   }
 
-  const clearTable = async () => {
-    await supabase.channel('omi-room').send({ type: 'broadcast', event: 'reset-table' })
+  // B. SELECT TRUMP
+  const selectTrump = async (suit) => {
+      const hands = {}
+      let cardIdx = 4
+      
+      // Dealer 2nd batch (4)
+      hands[players[dealerIndex].id] = currentDeck.slice(4, 8)
+      cardIdx = 8
+
+      // Others get 8
+      players.forEach((p, i) => {
+          if (i !== dealerIndex) {
+              hands[p.id] = currentDeck.slice(cardIdx, cardIdx + 8)
+              cardIdx += 8
+          }
+      })
+
+      await syncGame({ 
+          trumpSuit: suit, 
+          gamePhase: 'playing',
+          turnIndex: dealerIndex // Dealer ම මුලින් ගහනවා (Trump කැල්ල)
+      })
+      await supabase.channel('omi-logic-room').send({ type: 'broadcast', event: 'receive-cards', payload: { hands } })
   }
+
+  // C. PLAY CARD (The Main Logic)
+  const handleCardClick = async (card) => {
+      // 1. Is it my turn?
+      if (players[turnIndex]?.id !== user.id) {
+          setAlertMsg("Not your turn!"); setTimeout(() => setAlertMsg(null), 1000); return
+      }
+
+      // 2. Is it a valid move? (Rule Book Check)
+      if (!isValidMove(card, myHand, tableCards, trumpSuit)) {
+          setAlertMsg("You must follow the suit!"); setTimeout(() => setAlertMsg(null), 1000); return
+      }
+
+      // 3. Remove from hand & Add to table
+      const newHand = myHand.filter(c => c.id !== card.id)
+      setMyHand(newHand)
+      
+      const newTableCards = [...tableCards, { card, player: user.full_name, playerId: user.id }]
+      const nextTurn = (turnIndex + 1) % players.length
+
+      // 4. Check if Trick Ended (4 Cards)
+      if (newTableCards.length === players.length) {
+          // Broadcast the move first so everyone sees the 4th card
+          await syncGame({ tableCards: newTableCards, turnIndex: -1 }) // -1 to pause turns
+
+          // Wait 2 seconds, then calculate winner
+          setTimeout(async () => {
+              const winnerData = determineTrickWinner(newTableCards, trumpSuit)
+              
+              // Calculate Points
+              // Team 1 = Index 0 & 2 | Team 2 = Index 1 & 3
+              const winnerIndex = players.findIndex(p => p.id === winnerData.playerId)
+              const winningTeam = (winnerIndex === 0 || winnerIndex === 2) ? 'team1' : 'team2'
+              
+              const newTricks = { ...tricks, [winningTeam]: tricks[winningTeam] + 1 }
+
+              // Broadcast Winner
+              await supabase.channel('omi-logic-room').send({ 
+                  type: 'broadcast', 
+                  event: 'trick-winner', 
+                  payload: { winnerName: winnerData.player } 
+              })
+
+              // Check if Round Ended (8 Tricks total? Or 32 cards gone?)
+              // For simplicity, we check if total tokens = 8 (assuming 4 players)
+              // Actually Omi has 8 tricks.
+              if (newTricks.team1 + newTricks.team2 === 8) {
+                  endRound(newTricks)
+              } else {
+                  // Next Trick starts with Winner
+                  await syncGame({ 
+                      tableCards: [], 
+                      tricks: newTricks, 
+                      turnIndex: winnerIndex 
+                  })
+              }
+          }, 2000)
+
+      } else {
+          // Just next player
+          await syncGame({ 
+              tableCards: newTableCards, 
+              turnIndex: nextTurn 
+          })
+      }
+  }
+
+  // D. END ROUND (Scoring)
+  const endRound = async (finalTricks) => {
+      let newScores = { ...scores }
+      // Simple Scoring: Majority wins (This is basic Omi)
+      // Real Omi is complex (Kapothi etc.), let's allow Dealer to override if needed
+      // For now: Winner gets 1 point
+      if (finalTricks.team1 > finalTricks.team2) newScores.team1 += 1
+      else newScores.team2 += 1
+
+      const nextDealer = (dealerIndex + 1) % players.length
+
+      await syncGame({
+          gamePhase: 'waiting',
+          scores: newScores,
+          dealerIndex: nextDealer,
+          tableCards: [],
+          turnIndex: -1
+      })
+  }
+
+  // UI Helpers
+  const isMyTurn = players[turnIndex]?.id === user?.id
+  const isDealer = players[dealerIndex]?.id === user?.id
 
   return (
-    <div className="min-h-screen bg-green-800 text-white flex flex-col relative overflow-hidden">
+    <div className="min-h-screen bg-green-900 text-white flex flex-col relative overflow-hidden font-sans select-none">
       
-      {/* Header */}
-      <div className="p-4 flex justify-between items-center bg-black/20 backdrop-blur-md z-10">
-        <button onClick={() => router.push('/')} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-            <ArrowLeft size={24} />
-        </button>
-        <h1 className="font-black text-xl tracking-widest text-yellow-400 drop-shadow-md">OMI ARENA</h1>
-        <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded-full border border-white/10">
-            <Users size={16} className="text-gray-300" /> 
-            <span className="font-bold text-sm">{Object.keys(players).length}</span>
-        </div>
+      {/* ALERT OVERLAY */}
+      {alertMsg && <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-2 rounded-full border border-red-500 z-[100] animate-in slide-in-from-top"><p className="text-white font-bold flex items-center gap-2"><AlertCircle size={16}/> {alertMsg}</p></div>}
+
+      {/* TOP BAR */}
+      <div className="bg-black/40 backdrop-blur-md p-3 flex justify-between items-center z-50">
+         <div onClick={() => router.push('/')} className="p-2 bg-white/10 rounded-full"><ArrowLeft size={20}/></div>
+         <div className="flex items-center gap-6">
+             <div className="text-center"><p className="text-[9px] text-gray-400 font-bold">TEAM A</p><p className="text-xl font-black text-blue-400">{scores.team1} <span className="text-xs text-white">({tricks.team1})</span></p></div>
+             <div className="text-center"><p className="text-[9px] text-gray-400 font-bold">TEAM B</p><p className="text-xl font-black text-red-400">{scores.team2} <span className="text-xs text-white">({tricks.team2})</span></p></div>
+         </div>
+         <div className="flex items-center gap-1 bg-white/10 px-3 py-1 rounded-full"><Crown size={14} className="text-yellow-400"/> <span className="text-xs font-bold text-yellow-400">{players[dealerIndex]?.name.split(' ')[0]}</span></div>
       </div>
 
-      {/* GAME TABLE (CENTER) */}
-      <div className="flex-1 flex flex-col items-center justify-center relative p-4">
-         
-         {/* Green Felt Texture */}
-         <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-green-600 to-green-900"></div>
+      {/* TABLE AREA */}
+      <div className="flex-1 relative flex flex-col items-center justify-center">
+          
+          {/* TRUMP INDICATOR */}
+          {trumpSuit && (
+              <div className="absolute top-4 left-4 bg-white text-black p-2 rounded-xl shadow-xl border-4 border-yellow-500">
+                  <p className="text-[8px] font-black uppercase">Trump</p>
+                  <p className={`text-2xl leading-none ${trumpSuit === '♥️' || trumpSuit === '♦️' ? 'text-red-600' : 'text-black'}`}>{trumpSuit}</p>
+              </div>
+          )}
 
-         {/* The Played Cards Area */}
-         <div className="w-64 h-64 md:w-80 md:h-80 border-8 border-yellow-600/30 rounded-full bg-green-900/40 backdrop-blur-sm flex items-center justify-center relative shadow-2xl z-0">
-            {tableCards.length === 0 && <span className="text-white/30 text-xs uppercase font-bold tracking-widest animate-pulse">Waiting for move...</span>}
-            
-            {tableCards.map((move, i) => (
-                <div key={i} className="absolute transition-all duration-300 animate-in zoom-in fade-in slide-in-from-bottom-4" style={{ transform: `rotate(${i * 15 - 15}deg) translate(${i * 2}px, ${i * -2}px)` }}>
-                    <div className={`w-20 h-28 bg-white rounded-lg shadow-2xl flex flex-col items-center justify-center border border-gray-300 ${move.card.color}`}>
-                        <span className="text-2xl font-black">{move.card.rank}</span>
-                        <span className="text-3xl">{move.card.suit}</span>
-                    </div>
-                    <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] bg-black/80 text-white px-2 py-0.5 rounded-full whitespace-nowrap shadow-md border border-white/10">
-                        {move.player?.split(' ')[0]}
-                    </span>
-                </div>
-            ))}
-         </div>
+          {/* TURN INDICATOR */}
+          <div className="absolute top-4 bg-black/50 px-4 py-1 rounded-full border border-white/20">
+             <p className="text-xs font-bold text-white">Turn: <span className="text-green-400">{players[turnIndex]?.name || 'Waiting...'}</span></p>
+          </div>
 
-         {/* Action Buttons */}
-         <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
-            <button onClick={handleDeal} className="bg-yellow-500 hover:bg-yellow-400 text-black font-black px-4 py-2 rounded-xl shadow-lg text-xs uppercase tracking-wider transition-transform active:scale-95 flex items-center gap-2">
-                <RefreshCw size={14} /> Deal
-            </button>
-            <button onClick={clearTable} className="bg-red-600 hover:bg-red-500 text-white font-bold px-4 py-2 rounded-xl shadow-lg text-xs uppercase tracking-wider transition-transform active:scale-95">
-                Clear
-            </button>
-         </div>
+          {/* CARDS ON TABLE */}
+          <div className="w-72 h-72 rounded-full border-[8px] border-yellow-600/30 bg-green-800/50 flex items-center justify-center relative">
+              {tableCards.map((move, i) => (
+                  <div key={i} className="absolute animate-in zoom-in" style={{ transform: `rotate(${i * 20 - 20}deg) translate(${i * 10}px, ${i * -10}px)`, zIndex: i }}>
+                      <div className={`w-16 h-24 bg-white rounded shadow-md border border-gray-300 flex flex-col items-center justify-center ${move.card.color}`}>
+                          <span className="text-xl font-bold">{move.card.rank}</span><span className="text-xl">{move.card.suit}</span>
+                      </div>
+                      <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[8px] bg-black text-white px-1 rounded">{move.player.split(' ')[0]}</span>
+                  </div>
+              ))}
+
+              {/* DEALER START BTN */}
+              {isDealer && gamePhase === 'waiting' && players.length > 0 && (
+                  <button onClick={startRound} className="absolute z-50 bg-yellow-500 text-black font-black px-6 py-2 rounded-full shadow-lg hover:scale-110 transition-transform animate-pulse">START GAME</button>
+              )}
+
+              {/* TRUMP SELECTOR */}
+              {isDealer && gamePhase === 'calling_trump' && (
+                  <div className="absolute inset-0 bg-black/90 rounded-full flex flex-col items-center justify-center z-50">
+                      <p className="text-yellow-400 text-xs font-bold mb-2">PICK TRUMP</p>
+                      <div className="grid grid-cols-2 gap-2">
+                          {SUITS.map(suit => (
+                              <button key={suit} onClick={() => selectTrump(suit)} className="w-10 h-10 bg-white rounded text-2xl hover:scale-110">{suit}</button>
+                          ))}
+                      </div>
+                  </div>
+              )}
+          </div>
       </div>
 
-      {/* MY HAND (BOTTOM) */}
-      <div className="h-48 bg-gradient-to-t from-black/80 to-transparent p-4 flex items-end justify-center overflow-x-auto overflow-y-hidden z-20 w-full">
-         <div className="flex -space-x-8 md:-space-x-4 pb-4 px-8 min-w-max">
-            {myHand.length === 0 ? (
-                <div className="text-center text-gray-400 text-sm font-medium bg-black/40 px-6 py-2 rounded-full border border-white/10">
-                    Waiting for deal...
-                </div>
-            ) : (
-                myHand.map((card) => (
-                    <button 
-                        key={card.id} 
-                        onClick={() => playCard(card)}
-                        className={`relative w-24 h-36 bg-white rounded-xl shadow-2xl border border-gray-300 flex flex-col items-center justify-between p-2 transform hover:-translate-y-10 hover:rotate-2 transition-all duration-300 hover:z-50 hover:shadow-orange-500/20 group ${card.color}`}
-                    >
-                        <div className="text-lg font-bold self-start leading-none">{card.rank}<br/><span className="text-sm">{card.suit}</span></div>
-                        <div className="text-4xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity">{card.suit}</div>
-                        <div className="text-lg font-bold self-end rotate-180 leading-none">{card.rank}<br/><span className="text-sm">{card.suit}</span></div>
-                    </button>
-                ))
-            )}
-         </div>
+      {/* MY HAND */}
+      <div className={`h-40 bg-gradient-to-t from-black to-transparent p-2 flex items-end justify-center w-full transition-opacity ${isMyTurn ? 'opacity-100' : 'opacity-60 grayscale'}`}>
+          <div className="flex -space-x-2">
+              {myHand.map((card) => (
+                  <button 
+                    key={card.id} 
+                    onClick={() => handleCardClick(card)} 
+                    disabled={!isMyTurn}
+                    className={`w-20 h-32 bg-white rounded-lg shadow-2xl border flex flex-col items-center justify-between p-1 hover:-translate-y-4 transition-transform ${card.color} ${!isMyTurn ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                      <div className="text-sm font-bold self-start leading-none">{card.rank}<br/>{card.suit}</div>
+                      <div className="text-3xl opacity-20">{card.suit}</div>
+                      <div className="text-sm font-bold self-end rotate-180 leading-none">{card.rank}<br/>{card.suit}</div>
+                  </button>
+              ))}
+          </div>
       </div>
+      {isMyTurn && <div className="absolute bottom-40 w-full text-center pointer-events-none"><span className="bg-green-500 text-black text-xs font-bold px-3 py-1 rounded-full animate-bounce">YOUR TURN!</span></div>}
 
     </div>
   )
