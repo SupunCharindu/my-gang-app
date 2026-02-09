@@ -1,16 +1,20 @@
 'use client'
 import { Send, MoreVertical, Phone, Video } from 'lucide-react'
 
+// ... (උඩ imports ටික එහෙමම තියන්න)
+
 export default function ChatSection({ messages, profile, newMessage, setNewMessage, handleSendMessage, chatEndRef }) {
   
+  // ★ මේ ලින්ක් එක ඔයාට ඕන එකට වෙනස් කරන්න (WhatsApp Group Link එක දාන්න)
+  const VIDEO_CALL_LINK = "https://call.whatsapp.com/video/fELm1QWzXlS9eGbx4oPIQM" 
+
   return (
-    // කලින් මෙතන 'hidden md:flex' තිබුනා නම් ඒක අයින් කළා. 
-    // දැන් කෙලින්ම 'flex' දැම්මා.
     <div className="flex flex-col h-full w-full bg-white/5 md:rounded-3xl border-x md:border border-white/10 relative overflow-hidden">
       
-      {/* 1. CHAT HEADER (Desktop & Mobile) */}
+      {/* 1. CHAT HEADER */}
       <div className="p-4 border-b border-white/10 bg-[#050505]/50 backdrop-blur-md flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center gap-3">
+            {/* ... (වම් පැත්තේ කොටස එහෙමම තියන්න) ... */}
             <div className="relative">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 p-[2px]">
                     <div className="w-full h-full rounded-full bg-black flex items-center justify-center overflow-hidden">
@@ -27,13 +31,26 @@ export default function ChatSection({ messages, profile, newMessage, setNewMessa
             </div>
         </div>
         
-        {/* Decorative Icons */}
+        {/* ★ ICONS WITH LINKS (වැඩ කරන අයිකන්) */}
         <div className="flex items-center gap-4 text-gray-400">
-            <Phone size={18} className="cursor-pointer hover:text-white transition-colors"/>
-            <Video size={18} className="cursor-pointer hover:text-white transition-colors"/>
-            <MoreVertical size={18} className="cursor-pointer hover:text-white transition-colors"/>
+            
+            {/* Phone Icon: Click කළාම Dialer එකට යනවා */}
+            <a href="tel:" className="hover:text-white transition-colors">
+                <Phone size={18} />
+            </a>
+
+            {/* Video Icon: Click කළාම WhatsApp Group එකට යනවා */}
+            <a href={VIDEO_CALL_LINK} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
+                <Video size={18} />
+            </a>
+
+            <button className="hover:text-white transition-colors">
+                <MoreVertical size={18} />
+            </button>
         </div>
       </div>
+
+      {/* ... (පහළ ඉතුරු කෝඩ් ටික එහෙමම තියන්න) ... */}
 
       {/* 2. MESSAGES LIST (SCROLLABLE) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-700">

@@ -1,24 +1,23 @@
 import { ImageResponse } from 'next/og'
 
-// ★ මේ පේළිය අනිවාර්යයෙන්ම ඕන (Runtime Fix)
+// මේකෙන් කියන්නේ මේක Edge Server එකේ දුවන්න කියලා (Error එන්නේ නෑ)
 export const runtime = 'edge'
 
-// Image metadata
+// Icon Size
 export const size = {
   width: 32,
   height: 32,
 }
 export const contentType = 'image/png'
 
-// Image generation
+// Code වලින් Icon එක අඳිනවා
 export default function Icon() {
   return new ImageResponse(
     (
-      // ImageResponse JSX element
       <div
         style={{
-          fontSize: 24,
-          background: 'linear-gradient(to bottom right, #2563eb, #9333ea)',
+          fontSize: 20,
+          background: 'linear-gradient(to bottom right, #2563eb, #9333ea)', // නිල්-දම් පාට
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -32,8 +31,6 @@ export default function Icon() {
         G
       </div>
     ),
-    {
-      ...size,
-    }
+    { ...size }
   )
 }
